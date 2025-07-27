@@ -1,15 +1,16 @@
-.PHONY: help kind-deploy kind-test kind-status kind-cleanup kind-rebuild docker-dev logs port-forward clean-all
+.PHONY: help kind-deploy kind-test kind-status kind-cleanup kind-cleanup-hosts kind-rebuild docker-dev logs port-forward clean-all
 
 # Default target
 help:
 	@echo "FastAPI Microservices with Kind - Available Commands:"
 	@echo ""
 	@echo "🚀 Kind Deployment:"
-	@echo "  make kind-deploy     - Deploy complete stack with Kind"
-	@echo "  make kind-test       - Run tests against Kind deployment"
-	@echo "  make kind-status     - Show Kind cluster status"
-	@echo "  make kind-cleanup    - Remove Kind cluster and registry"
-	@echo "  make kind-rebuild    - Rebuild and redeploy images"
+	@echo "  make kind-deploy       - Deploy complete stack with Kind"
+	@echo "  make kind-test         - Run tests against Kind deployment"
+	@echo "  make kind-status       - Show Kind cluster status"
+	@echo "  make kind-cleanup      - Remove Kind cluster, registry, and hosts"
+	@echo "  make kind-cleanup-hosts - Remove only host entries"
+	@echo "  make kind-rebuild      - Rebuild and redeploy images"
 	@echo ""
 	@echo "🐳 Local Development:"
 	@echo "  make docker-dev      - Run with Docker Compose (local dev)"
@@ -36,6 +37,10 @@ kind-status:
 kind-cleanup:
 	@echo "🧹 Cleaning up Kind deployment..."
 	./deploy-kind.sh cleanup
+
+kind-cleanup-hosts:
+	@echo "🧹 Cleaning up host entries only..."
+	./deploy-kind.sh cleanup-hosts
 
 kind-rebuild:
 	@echo "🔄 Rebuilding and redeploying images..."

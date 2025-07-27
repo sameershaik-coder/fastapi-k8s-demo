@@ -4,31 +4,41 @@
 
 set -e
 
-echo "🚀 Starting Kind deployment for FastAPI Microservices..."
-
 # Configuration
 CLUSTER_NAME="fastapi-microservices"
 REGISTRY_NAME="kind-registry"
 REGISTRY_PORT="5001"
 
-# Check if Kind is installed
-if ! command -v kind &> /dev/null; then
-    echo "❌ Kind is not installed. Please install Kind first:"
-    echo "   # On Linux/macOS:"
-    echo "   curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64"
-    echo "   chmod +x ./kind"
-    echo "   sudo mv ./kind /usr/local/bin/kind"
-    echo ""
-    echo "   # Or with package managers:"
-    echo "   # brew install kind          (macOS)"
-    echo "   # choco install kind         (Windows)"
-    exit 1
-fi
+# Parse command line arguments first
+ACTION="${1:-deploy}"
 
-# Check if kubectl is installed
-if ! command -v kubectl &> /dev/null; then
-    echo "❌ kubectl is not installed. Please install kubectl first."
-    exit 1
+echo "🚀 Starting Kind deployment for FastAPI Microservices..."
+
+# For cleanup operations, we don't need to check all dependencies
+if [[ "$ACTION" == "cleanup" || "$ACTION" == "clean" || "$ACTION" == "cleanup-hosts" || "$ACTION" == "help" || "$ACTION" == "--help" || "$ACTION" == "-h" ]]; then
+    # Skip dependency checks for cleanup and help
+    :
+else
+    # Check dependencies for deploy and status operations
+    # Check if Kind is installed
+    if ! command -v kind &> /dev/null; then
+        echo "❌ Kind is not installed. Please install Kind first:"
+        echo "   # On Linux/macOS:"
+        echo "   curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64"
+        echo "   chmod +x ./kind"
+        echo "   sudo mv ./kind /usr/local/bin/kind"
+        echo ""
+        echo "   # Or with package managers:"
+        echo "   # brew install kind          (macOS)"
+        echo "   # choco install kind         (Windows)"
+        exit 1
+    fi
+
+    # Check if kubectl is installed
+    if ! command -v kubectl &> /dev/null; then
+        echo "❌ kubectl is not installed. Please install kubectl first."
+        exit 1
+    fi
 fi
 
 # Function to create local registry
@@ -176,6 +186,19 @@ setup_hosts() {
     fi
 }
 
+# Function to cleanup local hosts
+cleanup_hosts() {
+    echo "🧹 Cleaning up local hosts..."
+    
+    if grep -q "dev.microservices.local" /etc/hosts; then
+        echo "Removing host entries from /etc/hosts (requires sudo)..."
+        sudo sed -i '/127\.0\.0\.1[[:space:]]*dev\.microservices\.local/d' /etc/hosts
+        echo "✅ Host entries removed"
+    else
+        echo "No host entries found in /etc/hosts"
+    fi
+}
+
 # Function to display access information
 show_access_info() {
     echo ""
@@ -216,15 +239,40 @@ main() {
 }
 
 # Parse command line arguments
-case "${1:-deploy}" in
+case "$ACTION" in
     "deploy"|"")
         main
         ;;
     "cleanup"|"clean")
         echo "🧹 Cleaning up Kind cluster and registry..."
-        kind delete cluster --name=${CLUSTER_NAME} || true
-        docker rm -f ${REGISTRY_NAME} || true
-        echo "✅ Cleanup completed"
+        
+        # Delete Kind cluster (this also removes kubectl context)
+        if kind get clusters | grep -q "^${CLUSTER_NAME}$"; then
+            echo "Deleting Kind cluster: ${CLUSTER_NAME}"
+            kind delete cluster --name=${CLUSTER_NAME}
+        else
+            echo "Kind cluster ${CLUSTER_NAME} not found, skipping..."
+        fi
+        
+        # Remove local Docker registry
+        if docker ps -a --format '{{.Names}}' | grep -q "^${REGISTRY_NAME}$"; then
+            echo "Removing Docker registry: ${REGISTRY_NAME}"
+            docker rm -f ${REGISTRY_NAME}
+        else
+            echo "Docker registry ${REGISTRY_NAME} not found, skipping..."
+        fi
+        
+        # Clean up host entries
+        cleanup_hosts
+        
+        # Clean up any dangling images (optional)
+        echo "Cleaning up Kind-related Docker images..."
+        docker image prune -f --filter label=io.x-k8s.kind.cluster=${CLUSTER_NAME} || true
+        
+        echo "✅ Cleanup completed successfully"
+        ;;
+    "cleanup-hosts")
+        cleanup_hosts
         ;;
     "status")
         echo "📊 Kind Cluster Status:"
@@ -236,11 +284,22 @@ case "${1:-deploy}" in
             kubectl get pods -n dev 2>/dev/null || echo "No dev namespace found"
         fi
         ;;
+    "help"|"--help"|"-h")
+        echo "Usage: $0 [deploy|cleanup|cleanup-hosts|status|help]"
+        echo "  deploy        - Deploy the full stack (default)"
+        echo "  cleanup       - Remove Kind cluster, registry, and host entries"
+        echo "  cleanup-hosts - Remove only host entries from /etc/hosts"
+        echo "  status        - Show cluster status"
+        echo "  help          - Show this help message"
+        exit 0
+        ;;
     *)
-        echo "Usage: $0 [deploy|cleanup|status]"
-        echo "  deploy  - Deploy the full stack (default)"
-        echo "  cleanup - Remove Kind cluster and registry"
-        echo "  status  - Show cluster status"
+        echo "Usage: $0 [deploy|cleanup|cleanup-hosts|status|help]"
+        echo "  deploy        - Deploy the full stack (default)"
+        echo "  cleanup       - Remove Kind cluster, registry, and host entries"
+        echo "  cleanup-hosts - Remove only host entries from /etc/hosts"
+        echo "  status        - Show cluster status"
+        echo "  help          - Show this help message"
         exit 1
         ;;
 esac
