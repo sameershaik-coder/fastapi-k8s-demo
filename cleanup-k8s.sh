@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Cleanup script for FastAPI Microservices
+# Cleanup script for Kubernetes deployments
 
 set -e
 
-echo "🧹 Cleaning up deployments..."
+echo "🧹 Cleaning up Kubernetes deployments..."
 
 ENVIRONMENT=${1:-both}
 
@@ -24,18 +24,9 @@ case $ENVIRONMENT in
         ;;
     *)
         echo "❌ Invalid environment. Use: dev, qa, or both"
+        echo "Usage: $0 [dev|qa|both]"
         exit 1
         ;;
 esac
 
 echo "✅ Cleanup completed!"
-
-# Optionally clean up Docker images
-read -p "Do you want to clean up Docker images as well? (y/N): " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo "🗑️  Removing Docker images..."
-    eval $(minikube docker-env)
-    docker rmi orders-service:latest orders-service:qa sales-service:latest sales-service:qa --force 2>/dev/null || true
-    echo "✅ Docker images cleaned up!"
-fi

@@ -1,22 +1,24 @@
-.PHONY: help start-minikube build deploy-dev deploy-qa deploy-all init-db test clean docker-dev logs status ingress-info setup-hosts
+.PHONY: help start-minikube build deploy-dev deploy-qa deploy-all init-db test clean docker-dev logs status ingress-info setup-hosts create-namespaces quick-setup
 
 # Default target
 help:
 	@echo "FastAPI Microservices - Available Commands:"
 	@echo ""
-	@echo "  make start-minikube  - Start Minikube cluster with Ingress"
-	@echo "  make build          - Build Docker images"
-	@echo "  make deploy-dev     - Deploy to DEV environment"
-	@echo "  make deploy-qa      - Deploy to QA environment"
-	@echo "  make deploy-all     - Deploy to both environments"
-	@echo "  make init-db        - Initialize databases"
-	@echo "  make docker-dev     - Run with Docker Compose (local dev)"
-	@echo "  make test           - Run tests"
-	@echo "  make logs           - Show application logs"
-	@echo "  make status         - Show cluster status"
-	@echo "  make ingress-info   - Show Ingress information"
-	@echo "  make setup-hosts    - Add host entries for local testing"
-	@echo "  make clean          - Clean up deployments"
+	@echo "  make quick-setup      - Complete setup (start->build->deploy->init)"
+	@echo "  make start-minikube   - Start Minikube cluster with Ingress"
+	@echo "  make create-namespaces - Create Kubernetes namespaces"
+	@echo "  make build            - Build Docker images"
+	@echo "  make deploy-dev       - Deploy to DEV environment"
+	@echo "  make deploy-qa        - Deploy to QA environment"
+	@echo "  make deploy-all       - Deploy to both environments"
+	@echo "  make init-db          - Initialize databases"
+	@echo "  make docker-dev       - Run with Docker Compose (local dev)"
+	@echo "  make test             - Run tests"
+	@echo "  make logs             - Show application logs"
+	@echo "  make status           - Show cluster status"
+	@echo "  make ingress-info     - Show Ingress information"
+	@echo "  make setup-hosts      - Add host entries for local testing"
+	@echo "  make clean            - Clean up deployments"
 	@echo ""
 
 start-minikube:
@@ -25,6 +27,16 @@ start-minikube:
 	minikube addons enable metrics-server
 	minikube addons enable ingress
 	@echo "✅ Minikube started with Ingress addon enabled"
+
+quick-setup:
+	@echo "🚀 Running complete setup..."
+	./quick-setup.sh
+
+create-namespaces:
+	@echo "📦 Creating Kubernetes namespaces..."
+	kubectl apply -f k8s/dev/namespace.yaml
+	kubectl apply -f k8s/qa/namespace.yaml
+	@echo "✅ Namespaces created successfully"
 
 build:
 	@echo "🏗️  Building Docker images..."
