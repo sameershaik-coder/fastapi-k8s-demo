@@ -1,6 +1,6 @@
-# FastAPI Microservices with Kubernetes
+# FastAPI Microservices with Kind
 
-This project contains two microservices (Orders and Sales) built with FastAPI and PostgreSQL. It can be deployed locally using Docker Compose or on any Kubernetes cluster.
+This project contains two microservices (Orders and Sales) built with FastAPI and PostgreSQL. It can be deployed locally using Docker Compose or on a local Kubernetes cluster using Kind (Kubernetes in Docker).
 
 ## Architecture
 
@@ -8,7 +8,8 @@ This project contains two microservices (Orders and Sales) built with FastAPI an
 - **Sales Service**: Manages sales operations
 - **PostgreSQL**: Database for both services
 - **Docker Compose**: Local development environment
-- **Kubernetes**: Container orchestration for production deployments
+- **Kind**: Local Kubernetes cluster for testing Kubernetes deployments
+- **Ingress**: NGINX Ingress Controller for routing in Kind
 
 ## Project Structure
 
@@ -26,24 +27,50 @@ fastapi-k8s-demo/
 │       ├── Dockerfile            # Sales service Docker image
 │       └── requirements.txt      # Python dependencies
 ├── k8s/
-│   ├── dev/                      # Development environment
-│   │   ├── postgres.yaml         # PostgreSQL deployment
-│   │   ├── orders-service.yaml   # Orders service deployment
-│   │   ├── sales-service.yaml    # Sales service deployment
-│   │   └── ingress.yaml          # Ingress configuration
-│   └── qa/                       # QA environment
-│       ├── postgres.yaml         # PostgreSQL with persistence
-│       ├── orders-service.yaml   # Orders with auto-scaling
-│       ├── sales-service.yaml    # Sales with auto-scaling
+│   ├── dev/                      # Development environment (generic K8s)
+│   ├── qa/                       # QA environment (generic K8s)
+│   └── kind/                     # Kind-specific manifests
+│       ├── postgres.yaml         # PostgreSQL deployment
+│       ├── orders-service.yaml   # Orders service deployment
+│       ├── sales-service.yaml    # Sales service deployment
 │       └── ingress.yaml          # Ingress configuration
 ├── docker-compose.yml            # Local development with Docker Compose
+├── kind-config.yaml              # Kind cluster configuration
+├── deploy-kind.sh                # Kind deployment script
+├── test-kind.sh                  # Kind testing script
 ├── deploy-k8s.sh                 # Generic Kubernetes deployment script
 ├── cleanup-k8s.sh                # Kubernetes cleanup script
 ├── test-local.sh                 # Test script for Docker Compose
+├── Makefile                      # Command shortcuts
+├── KIND-SETUP.md                 # Detailed Kind setup guide
 └── README.md                     # This file
 ```
 
 ## Quick Start
+
+### Prerequisites
+
+- **Docker** - Container runtime
+- **Kind** - Kubernetes in Docker (for local K8s testing)
+- **kubectl** - Kubernetes command-line tool
+
+#### Installing Prerequisites
+
+```bash
+# Install Docker (if not already installed)
+# Ubuntu/Debian:
+sudo apt update && sudo apt install docker.io
+sudo usermod -aG docker $USER
+
+# Install Kind
+curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+chmod +x ./kind
+sudo mv ./kind /usr/local/bin/kind
+
+# Install kubectl
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install kubectl /usr/local/bin/kubectl
+```
 
 ### Option 1: Local Development with Docker Compose
 
@@ -59,8 +86,70 @@ docker-compose up --build -d
 curl http://localhost:8001/health
 curl http://localhost:8002/health
 
+# Test with the test script
+./test-local.sh
+
+# Stop services
+docker-compose down
+```
+
+### Option 2: Kind (Local Kubernetes) Deployment
+
+```bash
+# Deploy complete stack with Kind (recommended)
+make kind-deploy
+# OR manually:
+./deploy-kind.sh
+
+# Test the deployment
+make kind-test
+# OR manually:
+./test-kind.sh
+
+# Access services via Ingress
+curl http://dev.microservices.local/orders/health
+curl http://dev.microservices.local/sales/health
+
+# View cluster status
+make kind-status
+
+# Clean up
+make kind-cleanup
+```
+
+> 📖 **For detailed Kind setup information, see [KIND-SETUP.md](KIND-SETUP.md)**
+
+### Option 3: Quick Commands with Makefile
+
+```bash
+# See all available commands
+make help
+
+# Local development workflow
+make docker-dev        # Start with Docker Compose
+make test-local        # Test local deployment
+
+# Kind workflow  
+make kind              # Deploy and test with Kind
+make kind-rebuild      # Rebuild images and redeploy
+make logs              # View application logs
+make port-forward      # Access services directly
+
+# Cleanup
+make clean-all         # Clean everything
+```
+
+## API Usage Examples
+
+### Via Kind Deployment (Ingress)
+
+```bash
+# Health checks
+curl http://dev.microservices.local/orders/health
+curl http://dev.microservices.local/sales/health
+
 # Create an order
-curl -X POST http://localhost:8001/orders \
+curl -X POST http://dev.microservices.local/orders/orders \
   -H "Content-Type: application/json" \
   -d '{
     "customer_name": "John Doe",
@@ -69,59 +158,31 @@ curl -X POST http://localhost:8001/orders \
     "price": 999.99
   }'
 
+# Get all orders
+curl http://dev.microservices.local/orders/orders
+
 # Create a sale
-curl -X POST http://localhost:8002/sales \
+curl -X POST http://dev.microservices.local/sales/sales \
   -H "Content-Type: application/json" \
   -d '{
     "salesperson_name": "Jane Smith",
-    "customer_name": "John Doe",
+    "customer_name": "John Doe", 
     "product_name": "Laptop",
     "quantity": 1,
     "unit_price": 999.99,
     "commission_rate": 0.05
   }'
 
-# Stop services
-docker-compose down
-
-# Test the deployment
-./test-local.sh
+# Get all sales
+curl http://dev.microservices.local/sales/sales
 ```
 
-### Option 2: Kubernetes Deployment
-
-For Kubernetes deployment, you can use the manifests in the `k8s/` directory with any Kubernetes cluster:
+### Via Docker Compose (Local Development)
 
 ```bash
-# Deploy to development environment
-./deploy-k8s.sh dev
-
-# Deploy to QA environment  
-./deploy-k8s.sh qa
-
-# Check deployment status
-kubectl get pods -n dev
-kubectl get pods -n qa
-
-# Initialize databases (as suggested by the deployment script)
-kubectl exec -n dev deployment/postgres -- psql -U user -d postgres -c "CREATE DATABASE orders_db;"
-kubectl exec -n dev deployment/postgres -- psql -U user -d postgres -c "CREATE DATABASE sales_db;"
-
-# Access services (port-forward)
-kubectl port-forward -n dev service/orders-service 8001:8001
-kubectl port-forward -n dev service/sales-service 8002:8002
-
-# Clean up
-./cleanup-k8s.sh both
-```
-
-## API Usage Examples
-
-### Orders Service
-
-```bash
-# Health check
+# Health checks
 curl http://localhost:8001/health
+curl http://localhost:8002/health
 
 # Create an order
 curl -X POST http://localhost:8001/orders \
@@ -135,16 +196,6 @@ curl -X POST http://localhost:8001/orders \
 
 # Get all orders
 curl http://localhost:8001/orders
-
-# Get specific order
-curl http://localhost:8001/orders/1
-```
-
-### Sales Service
-
-```bash
-# Health check
-curl http://localhost:8002/health
 
 # Create a sale
 curl -X POST http://localhost:8002/sales \
@@ -160,53 +211,180 @@ curl -X POST http://localhost:8002/sales \
 
 # Get all sales
 curl http://localhost:8002/sales
+```
 
-# Get sales by salesperson
-curl http://localhost:8002/sales/salesperson/Jane%20Smith
+### Via Port Forwarding (Kind/K8s)
+
+```bash
+# Setup port forwarding
+make port-forward
+
+# Or manually:
+kubectl port-forward -n dev service/orders-service 8001:8001 &
+kubectl port-forward -n dev service/sales-service 8002:8002 &
+
+# Then use localhost URLs (same as Docker Compose examples above)
+curl http://localhost:8001/health
+curl http://localhost:8002/health
 ```
 
 ## Development
 
 ### Making Changes
 
-1. Make changes to the FastAPI applications in `services/orders/app/` or `services/sales/app/`
-2. Rebuild and restart with Docker Compose:
+1. **Make changes** to the FastAPI applications in `services/orders/app/` or `services/sales/app/`
+2. **For Docker Compose**: Rebuild and restart:
    ```bash
    docker-compose up --build
+   ```
+3. **For Kind**: Rebuild and redeploy:
+   ```bash
+   make kind-rebuild
    ```
 
 ### Database Access
 
-When using Docker Compose, you can access PostgreSQL directly:
-
+#### Docker Compose
 ```bash
 # Connect to PostgreSQL
 docker-compose exec postgres psql -U user -d orders_db
-
 # Or for sales database
 docker-compose exec postgres psql -U user -d sales_db
 ```
 
+#### Kind/Kubernetes
+```bash
+# Connect to PostgreSQL
+kubectl exec -it -n dev deployment/postgres -- psql -U user -d orders_db
+# Or for sales database  
+kubectl exec -it -n dev deployment/postgres -- psql -U user -d sales_db
+```
+
+### Monitoring and Debugging
+
+#### Kind Deployment
+```bash
+# View logs
+make logs
+
+# Or manually:
+kubectl logs -f deployment/orders-service -n dev
+kubectl logs -f deployment/sales-service -n dev
+
+# Check pod status
+kubectl get pods -n dev
+
+# Describe problematic pods
+kubectl describe pod <pod-name> -n dev
+
+# Port forward for direct access
+make port-forward
+```
+
+#### Docker Compose
+```bash
+# View logs
+docker-compose logs orders-service
+docker-compose logs sales-service
+docker-compose logs postgres
+
+# Check container status
+docker-compose ps
+```
+
 ## Deployment Notes
 
-### Kubernetes Images
+### Kind vs Docker Compose
 
-The Kubernetes manifests expect images to be available in your cluster. You may need to:
+- **Docker Compose**: Best for rapid local development and testing
+- **Kind**: Best for testing Kubernetes deployments locally, CI/CD, and learning K8s
 
-1. Build and push images to a container registry
-2. Update the image names in the YAML files
-3. Or use a local registry with your Kubernetes cluster
+### Kind Features
 
-### Environment Configuration
+- **Local Registry**: Automatically creates a local Docker registry for images
+- **Ingress Controller**: NGINX Ingress Controller for realistic routing
+- **Multi-node**: 3-node cluster (1 control-plane, 2 workers) for realistic testing
+- **Host Network**: Port 80/443 mapped for easy access via localhost
 
-- **Development**: Uses simple PostgreSQL setup with basic resource limits
-- **QA**: Includes persistent storage, auto-scaling, and production-like resource limits
+### Image Management
 
-### Ingress
+The Kind deployment automatically:
+1. Builds Docker images locally
+2. Loads them into the Kind cluster
+3. Uses `imagePullPolicy: Never` to use local images
 
-The Kubernetes manifests include Ingress configurations for routing traffic to multiple services. Make sure you have an Ingress controller installed in your cluster.
+### Generic Kubernetes
+
+The `k8s/dev/` and `k8s/qa/` directories contain generic Kubernetes manifests that work with any cluster. Use these for:
+- Production deployments
+- Cloud Kubernetes services (EKS, GKE, AKS)
+- Self-managed clusters
 
 ## Troubleshooting
+
+### Kind Issues
+
+```bash
+# Check if Kind cluster exists
+kind get clusters
+
+# Check cluster status
+kubectl cluster-info --context kind-fastapi-microservices
+
+# Recreate cluster if needed
+make kind-cleanup
+make kind-deploy
+
+# Check if images are loaded
+docker exec -it fastapi-microservices-control-plane crictl images
+
+# Reload images if needed
+make kind-rebuild
+```
+
+### Ingress Issues
+
+```bash
+# Check Ingress controller status
+kubectl get pods -n ingress-nginx
+
+# Check Ingress configuration
+kubectl get ingress -n dev
+kubectl describe ingress microservices-ingress -n dev
+
+# Test with port-forward as fallback
+make port-forward
+```
+
+### DNS/Host Issues
+
+```bash
+# Check if host entry exists
+grep "dev.microservices.local" /etc/hosts
+
+# Add manually if needed
+echo "127.0.0.1 dev.microservices.local" | sudo tee -a /etc/hosts
+
+# Test with curl and explicit Host header
+curl -H "Host: dev.microservices.local" http://127.0.0.1/orders/health
+```
+
+### Application Issues
+
+```bash
+# Check pod status
+kubectl get pods -n dev
+
+# View detailed pod information
+kubectl describe pod <pod-name> -n dev
+
+# Check application logs
+kubectl logs -f deployment/orders-service -n dev
+kubectl logs -f deployment/sales-service -n dev
+
+# Check database connectivity
+kubectl exec -it -n dev deployment/postgres -- pg_isready -U user
+```
 
 ### Docker Compose Issues
 
@@ -219,23 +397,19 @@ docker-compose logs postgres
 # Restart services
 docker-compose restart
 
-# Clean up
+# Clean rebuild
 docker-compose down -v
+docker-compose up --build
 ```
 
-### Kubernetes Issues
+### General Cleanup
 
 ```bash
-# Check pod status
-kubectl get pods -n dev
+# Clean everything
+make clean-all
 
-# View logs
-kubectl logs -n dev deployment/orders-service
-kubectl logs -n dev deployment/sales-service
-
-# Check services
-kubectl get services -n dev
-
-# Clean up
-kubectl delete namespace dev qa
+# Or step by step:
+make kind-cleanup      # Remove Kind cluster
+docker-compose down -v # Remove Docker Compose
+docker system prune    # Clean Docker system
 ```

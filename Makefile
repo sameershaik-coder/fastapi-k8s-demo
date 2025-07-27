@@ -1,66 +1,60 @@
-.PHONY: help start-minikube build deploy-dev deploy-qa deploy-all init-db test clean docker-dev logs status ingress-info setup-hosts create-namespaces quick-setup
+.PHONY: help kind-deploy kind-test kind-status kind-cleanup kind-rebuild docker-dev logs port-forward clean-all
 
 # Default target
 help:
-	@echo "FastAPI Microservices - Available Commands:"
+	@echo "FastAPI Microservices with Kind - Available Commands:"
 	@echo ""
-	@echo "  make quick-setup      - Complete setup (start->build->deploy->init)"
-	@echo "  make start-minikube   - Start Minikube cluster with Ingress"
-	@echo "  make create-namespaces - Create Kubernetes namespaces"
-	@echo "  make build            - Build Docker images"
-	@echo "  make deploy-dev       - Deploy to DEV environment"
-	@echo "  make deploy-qa        - Deploy to QA environment"
-	@echo "  make deploy-all       - Deploy to both environments"
-	@echo "  make init-db          - Initialize databases"
-	@echo "  make docker-dev       - Run with Docker Compose (local dev)"
-	@echo "  make test             - Run tests"
-	@echo "  make logs             - Show application logs"
-	@echo "  make status           - Show cluster status"
-	@echo "  make ingress-info     - Show Ingress information"
-	@echo "  make setup-hosts      - Add host entries for local testing"
-	@echo "  make clean            - Clean up deployments"
+	@echo "🚀 Kind Deployment:"
+	@echo "  make kind-deploy     - Deploy complete stack with Kind"
+	@echo "  make kind-test       - Run tests against Kind deployment"
+	@echo "  make kind-status     - Show Kind cluster status"
+	@echo "  make kind-cleanup    - Remove Kind cluster and registry"
+	@echo "  make kind-rebuild    - Rebuild and redeploy images"
+	@echo ""
+	@echo "🐳 Local Development:"
+	@echo "  make docker-dev      - Run with Docker Compose (local dev)"
+	@echo "  make test-local      - Test Docker Compose deployment"
+	@echo ""
+	@echo "🔧 Utilities:"
+	@echo "  make logs            - Show application logs (Kind)"
+	@echo "  make port-forward    - Setup port forwarding for direct access"
+	@echo "  make clean-all       - Clean both Kind and Docker Compose"
 	@echo ""
 
-start-minikube:
-	@echo "🚀 Starting Minikube with Ingress..."
-	minikube start --driver=docker
-	minikube addons enable metrics-server
-	minikube addons enable ingress
-	@echo "✅ Minikube started with Ingress addon enabled"
+kind-deploy:
+	@echo "🚀 Deploying FastAPI Microservices with Kind..."
+	./deploy-kind.sh deploy
 
-quick-setup:
-	@echo "🚀 Running complete setup..."
-	./quick-setup.sh
+kind-test:
+	@echo "🧪 Testing Kind deployment..."
+	./test-kind.sh
 
-create-namespaces:
-	@echo "📦 Creating Kubernetes namespaces..."
-	kubectl apply -f k8s/dev/namespace.yaml
-	kubectl apply -f k8s/qa/namespace.yaml
-	@echo "✅ Namespaces created successfully"
+kind-status:
+	@echo "📊 Checking Kind cluster status..."
+	./deploy-kind.sh status
 
-build:
-	@echo "🏗️  Building Docker images..."
-	eval $$(minikube docker-env) && \
-	docker build -t orders-service:latest ./services/orders/ && \
-	docker build -t orders-service:qa ./services/orders/ && \
-	docker build -t sales-service:latest ./services/sales/ && \
-	docker build -t sales-service:qa ./services/sales/
+kind-cleanup:
+	@echo "🧹 Cleaning up Kind deployment..."
+	./deploy-kind.sh cleanup
 
-deploy-dev:
-	@echo "🌱 Deploying to DEV environment..."
-	./deploy.sh dev
-
-deploy-qa:
-	@echo "🧪 Deploying to QA environment..."
-	./deploy.sh qa
-
-deploy-all:
-	@echo "🚀 Deploying to both environments..."
-	./deploy.sh both
-
-init-db:
-	@echo "🗄️  Initializing databases..."
-	./init-db.sh
+kind-rebuild:
+	@echo "🔄 Rebuilding and redeploying images..."
+	@if kind get clusters | grep -q "fastapi-microservices"; then \
+		echo "Building new images..."; \
+		docker build -t orders-service:latest ./services/orders/; \
+		docker build -t sales-service:latest ./services/sales/; \
+		echo "Loading images into Kind cluster..."; \
+		kind load docker-image orders-service:latest --name=fastapi-microservices; \
+		kind load docker-image sales-service:latest --name=fastapi-microservices; \
+		echo "Restarting deployments..."; \
+		kubectl rollout restart deployment/orders-service -n dev; \
+		kubectl rollout restart deployment/sales-service -n dev; \
+		kubectl rollout status deployment/orders-service -n dev; \
+		kubectl rollout status deployment/sales-service -n dev; \
+		echo "✅ Rebuild completed"; \
+	else \
+		echo "❌ Kind cluster not found. Run 'make kind-deploy' first."; \
+	fi
 
 docker-dev:
 	@echo "🐳 Starting services with Docker Compose..."
@@ -69,64 +63,65 @@ docker-dev:
 	@echo "  Orders: http://localhost:8001"
 	@echo "  Sales:  http://localhost:8002"
 
-test:
-	@echo "🧪 Running tests..."
-	./test.sh
+test-local:
+	@echo "🧪 Testing Docker Compose deployment..."
+	./test-local.sh
 
 logs:
-	@echo "📋 Application logs:"
-	@echo "=== Orders Service Logs ==="
-	kubectl logs -f deployment/orders-service -n dev --tail=20 || echo "Orders service not found"
-	@echo ""
-	@echo "=== Sales Service Logs ==="
-	kubectl logs -f deployment/sales-service -n dev --tail=20 || echo "Sales service not found"
+	@echo "📋 Application logs (Kind deployment):"
+	@if kind get clusters | grep -q "fastapi-microservices"; then \
+		echo "=== Orders Service Logs ==="; \
+		kubectl logs --tail=20 deployment/orders-service -n dev || echo "Orders service not found"; \
+		echo ""; \
+		echo "=== Sales Service Logs ==="; \
+		kubectl logs --tail=20 deployment/sales-service -n dev || echo "Sales service not found"; \
+		echo ""; \
+		echo "=== PostgreSQL Logs ==="; \
+		kubectl logs --tail=10 deployment/postgres -n dev || echo "PostgreSQL not found"; \
+	else \
+		echo "❌ Kind cluster not found. Run 'make kind-deploy' first."; \
+	fi
 
-status:
-	@echo "📊 Cluster Status:"
-	@echo "=== Minikube Status ==="
-	minikube status
-	@echo ""
-	@echo "=== Pods Status ==="
-	kubectl get pods --all-namespaces
-	@echo ""
-	@echo "=== Services ==="
-	kubectl get services --all-namespaces
-	@echo ""
-	@echo "=== Ingress ==="
-	kubectl get ingress --all-namespaces
+port-forward:
+	@echo "🔌 Setting up port forwarding..."
+	@if kind get clusters | grep -q "fastapi-microservices"; then \
+		echo "Port forwarding will run in background. Use Ctrl+C to stop."; \
+		echo "Services will be available at:"; \
+		echo "  Orders: http://localhost:8001"; \
+		echo "  Sales:  http://localhost:8002"; \
+		echo ""; \
+		kubectl port-forward -n dev service/orders-service 8001:8001 & \
+		kubectl port-forward -n dev service/sales-service 8002:8002 & \
+		echo "Port forwarding started. Press Ctrl+C to stop."; \
+		wait; \
+	else \
+		echo "❌ Kind cluster not found. Run 'make kind-deploy' first."; \
+	fi
 
-ingress-info:
-	@echo "🌐 Ingress Information:"
-	@MINIKUBE_IP=$$(minikube ip) && \
-	echo "Minikube IP: $$MINIKUBE_IP" && \
-	echo "" && \
-	echo "Available URLs:" && \
-	echo "  DEV Environment:" && \
-	echo "    Base URL: http://$$MINIKUBE_IP" && \
-	echo "    Orders:   http://$$MINIKUBE_IP/orders" && \
-	echo "    Sales:    http://$$MINIKUBE_IP/sales" && \
-	echo "" && \
-	echo "  QA Environment:" && \
-	echo "    Base URL: http://$$MINIKUBE_IP" && \
-	echo "    Orders:   http://$$MINIKUBE_IP/orders" && \
-	echo "    Sales:    http://$$MINIKUBE_IP/sales" && \
-	echo "    API v1:   http://$$MINIKUBE_IP/api/v1/{orders|sales}" && \
-	echo "" && \
-	echo "Host Headers:" && \
-	echo "  DEV: -H 'Host: dev.microservices.local'" && \
-	echo "  QA:  -H 'Host: qa.microservices.local'"
-
-setup-hosts:
-	@echo "🔧 Setting up host entries..."
-	@MINIKUBE_IP=$$(minikube ip) && \
-	echo "Adding entries to /etc/hosts:" && \
-	echo "$$MINIKUBE_IP dev.microservices.local" | sudo tee -a /etc/hosts && \
-	echo "$$MINIKUBE_IP qa.microservices.local" | sudo tee -a /etc/hosts && \
-	echo "✅ Host entries added. You can now use:" && \
-	echo "  http://dev.microservices.local" && \
-	echo "  http://qa.microservices.local"
-
-clean:
-	@echo "🧹 Cleaning up..."
-	./cleanup.sh both
+clean-all:
+	@echo "🧹 Cleaning up everything..."
+	./deploy-kind.sh cleanup || true
 	docker-compose down -v 2>/dev/null || true
+	@echo "✅ All cleanup completed"
+
+# Quick development workflow targets
+dev: docker-dev test-local
+	@echo "🎉 Local development environment ready!"
+
+kind: kind-deploy kind-test
+	@echo "🎉 Kind deployment completed and tested!"
+
+# Show cluster information
+info:
+	@if kind get clusters | grep -q "fastapi-microservices"; then \
+		echo "📊 Kind Cluster Information:"; \
+		kubectl cluster-info --context kind-fastapi-microservices; \
+		echo ""; \
+		echo "📦 Deployed Resources:"; \
+		kubectl get all -n dev; \
+		echo ""; \
+		echo "🌐 Ingress:"; \
+		kubectl get ingress -n dev; \
+	else \
+		echo "❌ Kind cluster not found."; \
+	fi
