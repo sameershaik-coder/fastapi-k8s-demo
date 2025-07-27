@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Build and Deploy FastAPI Microservices to Minikube
+# Build and Deploy FastAPI Microservices to Minikube with Ingress
 
 set -e
 
@@ -11,6 +11,10 @@ if ! minikube status &> /dev/null; then
     echo "❌ Minikube is not running. Please start minikube first with: minikube start"
     exit 1
 fi
+
+# Enable Ingress addon
+echo "🔌 Enabling Ingress addon..."
+minikube addons enable ingress
 
 # Set Docker environment to use minikube's Docker daemon
 echo "🔧 Setting up Docker environment..."
@@ -53,7 +57,14 @@ case $ENVIRONMENT in
 esac
 
 echo "⏳ Waiting for deployments to be ready..."
-sleep 10
+sleep 15
+
+# Wait for Ingress controller to be ready
+echo "⏳ Waiting for Ingress controller..."
+kubectl wait --namespace ingress-nginx \
+  --for=condition=ready pod \
+  --selector=app.kubernetes.io/component=controller \
+  --timeout=120s
 
 # Check deployment status
 echo "📊 Checking deployment status..."
@@ -69,21 +80,27 @@ if [ "$ENVIRONMENT" = "qa" ] || [ "$ENVIRONMENT" = "both" ]; then
     echo ""
 fi
 
-# Get service URLs
-echo "🌐 Service URLs:"
+# Get Ingress information
+echo "🌐 Ingress Information:"
 MINIKUBE_IP=$(minikube ip)
 
 if [ "$ENVIRONMENT" = "dev" ] || [ "$ENVIRONMENT" = "both" ]; then
     echo "DEV Environment:"
-    echo "  Orders Service: http://$MINIKUBE_IP:30001"
-    echo "  Sales Service:  http://$MINIKUBE_IP:30002"
+    echo "  Ingress URL: http://$MINIKUBE_IP"
+    echo "  Orders API:  http://$MINIKUBE_IP/orders"
+    echo "  Sales API:   http://$MINIKUBE_IP/sales"
+    echo "  Host Header: dev.microservices.local"
     echo ""
 fi
 
 if [ "$ENVIRONMENT" = "qa" ] || [ "$ENVIRONMENT" = "both" ]; then
     echo "QA Environment:"
-    echo "  Orders Service: http://$MINIKUBE_IP:31001"
-    echo "  Sales Service:  http://$MINIKUBE_IP:31002"
+    echo "  Ingress URL: http://$MINIKUBE_IP"
+    echo "  Orders API:  http://$MINIKUBE_IP/orders"
+    echo "  Sales API:   http://$MINIKUBE_IP/sales"
+    echo "  API v1 Orders: http://$MINIKUBE_IP/api/v1/orders"
+    echo "  API v1 Sales:  http://$MINIKUBE_IP/api/v1/sales"
+    echo "  Host Header: qa.microservices.local"
     echo ""
 fi
 
@@ -91,5 +108,10 @@ echo "✅ Deployment completed successfully!"
 echo ""
 echo "📖 Quick commands:"
 echo "  - View all pods: kubectl get pods --all-namespaces"
+echo "  - View ingress: kubectl get ingress --all-namespaces"
 echo "  - View logs: kubectl logs -f deployment/orders-service -n dev"
 echo "  - Delete deployment: kubectl delete -f k8s/$ENVIRONMENT/"
+echo ""
+echo "🔧 To add host entries (optional):"
+echo "  echo '$MINIKUBE_IP dev.microservices.local' | sudo tee -a /etc/hosts"
+echo "  echo '$MINIKUBE_IP qa.microservices.local' | sudo tee -a /etc/hosts"

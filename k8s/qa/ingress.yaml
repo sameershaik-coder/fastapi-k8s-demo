@@ -1,0 +1,54 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: microservices-ingress
+  namespace: qa
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: qa.microservices.local
+    http:
+      paths:
+      - path: /orders(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: orders-service
+            port:
+              number: 8001
+      - path: /sales(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: sales-service
+            port:
+              number: 8002
+      - path: /api/v1/orders(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: orders-service
+            port:
+              number: 8001
+      - path: /api/v1/sales(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: sales-service
+            port:
+              number: 8002
+      - path: /(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: orders-service
+            port:
+              number: 8001

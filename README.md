@@ -1,6 +1,6 @@
 # FastAPI Microservices with Kubernetes
 
-This project contains two microservices (Orders and Sales) built with FastAPI, PostgreSQL, and deployed on Kubernetes using Minikube.
+This project contains two microservices (Orders and Sales) built with FastAPI, PostgreSQL, and deployed on Kubernetes using Minikube with Ingress controller.
 
 ## Architecture
 
@@ -9,6 +9,7 @@ This project contains two microservices (Orders and Sales) built with FastAPI, P
 - **PostgreSQL**: Database for both services
 - **Kubernetes**: Container orchestration
 - **Minikube**: Local Kubernetes cluster
+- **Ingress**: Single entry point for all services
 
 ## Project Structure
 
@@ -46,40 +47,41 @@ fastapi-k8s-demo/
 
 ## Quick Start
 
-1. **Start Minikube**
-   ```bash
-   minikube start
-   ```
+# Start Minikube with Ingress
+make start-minikube
 
-2. **Deploy to Dev Environment**
-   ```bash
-   kubectl apply -f k8s/dev/
-   ```
+# Deploy to dev environment
+make deploy-dev
 
-3. **Deploy to QA Environment**
-   ```bash
-   kubectl apply -f k8s/qa/
-   ```
+# Initialize databases
+make init-db
 
-## Services
+# Get access information
+make ingress-info
 
-### Orders Service
-- **Port**: 8001
-- **Database**: orders_db
-- **Endpoints**: 
-  - GET /orders
-  - POST /orders
-  - GET /orders/{id}
+# Get Minikube IP
+MINIKUBE_IP=$(minikube ip)
 
-### Sales Service
-- **Port**: 8002
-- **Database**: sales_db
-- **Endpoints**:
-  - GET /sales
-  - POST /sales
-  - GET /sales/{id}
+# Access via Ingress (with Host header)
+curl -H "Host: dev.microservices.local" http://$MINIKUBE_IP/orders/health
+curl -H "Host: dev.microservices.local" http://$MINIKUBE_IP/sales/health
 
-## Environment Management
+# Setup host entries for easier access
+make setup-hosts
 
-- **Dev**: Development environment with basic configurations
-- **QA**: Quality assurance environment with production-like settings
+# Then access directly
+curl http://dev.microservices.local/orders/health
+curl http://qa.microservices.local/api/v1/sales/health
+
+# Run automated tests (updated for Ingress)
+make test
+
+# Via Ingress (single IP, different paths)
+curl -H "Host: dev.microservices.local" http://$MINIKUBE_IP/orders/orders
+curl -H "Host: dev.microservices.local" http://$MINIKUBE_IP/sales/sales
+
+# Create order via Ingress
+curl -H "Host: dev.microservices.local" \
+  -X POST http://$MINIKUBE_IP/orders/orders \
+  -H "Content-Type: application/json" \
+  -d '{"customer_name": "John", "product_name": "Laptop", "quantity": 1, "price": 999.99}'
