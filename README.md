@@ -95,6 +95,21 @@ docker-compose down
 
 ### Option 2: Kind (Local Kubernetes) Deployment
 
+# Complete deployment
+make kind-deploy
+
+# Test everything
+make kind-test
+
+# Make code changes, then rebuild
+make kind-rebuild
+
+# View logs
+make logs
+
+# Clean up
+make kind-cleanup
+
 ```bash
 # Deploy complete stack with Kind (recommended)
 make kind-deploy

@@ -113,8 +113,25 @@ build_and_load_images() {
 deploy_applications() {
     echo "📦 Deploying applications..."
     
-    # Deploy all Kind-specific manifests
-    kubectl apply -f k8s/kind/
+    # First, create the namespace
+    echo "Creating namespace..."
+    kubectl apply -f k8s/kind/00-namespace.yaml
+    
+    # Wait a moment for namespace to be ready
+    sleep 2
+    
+    # Deploy infrastructure (PostgreSQL)
+    echo "Deploying PostgreSQL..."
+    kubectl apply -f k8s/kind/postgres.yaml
+    
+    # Deploy applications
+    echo "Deploying application services..."
+    kubectl apply -f k8s/kind/orders-service.yaml
+    kubectl apply -f k8s/kind/sales-service.yaml
+    
+    # Deploy ingress last
+    echo "Deploying Ingress..."
+    kubectl apply -f k8s/kind/ingress.yaml
     
     echo "⏳ Waiting for deployments to be ready..."
     kubectl wait --for=condition=available --timeout=300s deployment --all -n dev
