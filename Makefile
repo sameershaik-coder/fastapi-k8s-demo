@@ -12,6 +12,7 @@ help:
 	@echo "  make kind-cleanup-hosts - Remove only host entries"
 	@echo "  make kind-rebuild      - Rebuild and redeploy images"
 	@echo "  make kind-debug        - Debug deployment issues"
+	@echo "  make kind-db-check     - Check external database connectivity"
 	@echo ""
 	@echo "🐳 Local Development:"
 	@echo "  make docker-dev      - Run with Docker Compose (local dev)"
@@ -89,8 +90,9 @@ kind-debug:
 		echo "=== Service Status ==="; \
 		kubectl get services -n dev; \
 		echo ""; \
-		echo "=== Database Status ==="; \
-		kubectl exec -n dev deployment/postgres -- psql -U user -d postgres -c "\l" || echo "Database connection failed"; \
+		echo "=== External Database Status ==="; \
+		psql "postgresql://k8s_user:k8s_password@localhost:5432/orders_db" -c "SELECT 'orders_db connected' as status;" || echo "❌ Cannot connect to orders_db"; \
+		psql "postgresql://k8s_user:k8s_password@localhost:5432/sales_db" -c "SELECT 'sales_db connected' as status;" || echo "❌ Cannot connect to sales_db"; \
 		echo ""; \
 		echo "=== Recent Events ==="; \
 		kubectl get events -n dev --sort-by='.lastTimestamp' | tail -10; \
@@ -103,6 +105,22 @@ kind-debug:
 		done; \
 	else \
 		echo "❌ Kind cluster not found."; \
+	fi
+
+# Database connectivity check
+kind-db-check:
+	@echo "🗄️  Checking external PostgreSQL database connectivity..."
+	@if command -v psql >/dev/null 2>&1; then \
+		echo "Testing orders_db connection..."; \
+		psql "postgresql://k8s_user:k8s_password@localhost:5432/orders_db" -c "SELECT version();" && echo "✅ orders_db connection successful" || echo "❌ orders_db connection failed"; \
+		echo ""; \
+		echo "Testing sales_db connection..."; \
+		psql "postgresql://k8s_user:k8s_password@localhost:5432/sales_db" -c "SELECT version();" && echo "✅ sales_db connection successful" || echo "❌ sales_db connection failed"; \
+		echo ""; \
+		echo "Database list:"; \
+		psql "postgresql://k8s_user:k8s_password@localhost:5432/postgres" -c "\l"; \
+	else \
+		echo "❌ psql not found. Please install postgresql-client."; \
 	fi
 
 docker-dev:

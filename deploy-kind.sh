@@ -125,31 +125,40 @@ deploy_applications() {
     
     # First, create the namespace
     echo "Creating namespace..."
-    kubectl apply -f k8s/kind/00-namespace.yaml
+    kubectl apply -f k8s/dev/00-namespace.yaml
     
     # Wait a moment for namespace to be ready
     sleep 2
     
-    # Deploy infrastructure (PostgreSQL)
-    echo "Deploying PostgreSQL..."
-    kubectl apply -f k8s/kind/postgres.yaml
+    # Using external PostgreSQL database on WSL2
+    echo "📊 Using external PostgreSQL database on WSL2..."
     
-    # Wait for PostgreSQL to be ready and initialize databases
-    echo "⏳ Waiting for PostgreSQL to be ready..."
-    kubectl wait --for=condition=ready pod -l app=postgres -n dev --timeout=120s
+    # Test database connectivity before deploying apps
+    echo "🔍 Testing database connectivity..."
+    if command -v psql >/dev/null 2>&1; then
+        if psql "postgresql://k8s_user:k8s_password@localhost:5432/orders_db" -c "SELECT 1;" >/dev/null 2>&1; then
+            echo "✅ Orders database connectivity verified"
+        else
+            echo "⚠️  Warning: Cannot connect to orders_db. Please check PostgreSQL setup."
+        fi
+        
+        if psql "postgresql://k8s_user:k8s_password@localhost:5432/sales_db" -c "SELECT 1;" >/dev/null 2>&1; then
+            echo "✅ Sales database connectivity verified"
+        else
+            echo "⚠️  Warning: Cannot connect to sales_db. Please check PostgreSQL setup."
+        fi
+    else
+        echo "⚠️  psql not found, skipping connectivity test"
+    fi
     
-    # Initialize databases immediately after PostgreSQL is ready
-    echo "🗄️  Initializing databases..."
-    init_databases_internal
-    
-    # Now deploy applications (they can connect to existing databases)
-    echo "Deploying application services..."
-    kubectl apply -f k8s/kind/orders-service.yaml
-    kubectl apply -f k8s/kind/sales-service.yaml
+    # Deploy applications (they will connect to external database)
+    echo "🚀 Deploying FastAPI services..."
+    kubectl apply -f k8s/dev/orders-service.yaml
+    kubectl apply -f k8s/dev/sales-service.yaml
     
     # Deploy ingress last
     echo "Deploying Ingress..."
-    kubectl apply -f k8s/kind/ingress.yaml
+    kubectl apply -f k8s/dev/ingress.yaml
     
     echo "⏳ Waiting for deployments to be ready..."
     kubectl wait --for=condition=available --timeout=300s deployment --all -n dev
@@ -162,54 +171,11 @@ deploy_applications() {
     kubectl get ingress -n dev
 }
 
-# Internal function to initialize databases (called during deployment)
-init_databases_internal() {
-    local max_retries=5
-    local retry_count=0
-    
-    while [ $retry_count -lt $max_retries ]; do
-        echo "🔄 Database initialization attempt $((retry_count + 1))/$max_retries..."
-        
-        # Create orders_db
-        if kubectl exec -n dev deployment/postgres -- psql -U user -d postgres -c "CREATE DATABASE orders_db;" 2>/dev/null; then
-            echo "✅ Created orders_db"
-        else
-            echo "📝 orders_db already exists or creation failed"
-        fi
-        
-        # Create sales_db
-        if kubectl exec -n dev deployment/postgres -- psql -U user -d postgres -c "CREATE DATABASE sales_db;" 2>/dev/null; then
-            echo "✅ Created sales_db"
-        else
-            echo "📝 sales_db already exists or creation failed"
-        fi
-        
-        # Verify databases exist
-        if kubectl exec -n dev deployment/postgres -- psql -U user -d postgres -c "\l" | grep -q "orders_db\|sales_db"; then
-            echo "✅ Database initialization successful"
-            return 0
-        else
-            echo "⚠️  Database verification failed, retrying in 5 seconds..."
-            sleep 5
-            retry_count=$((retry_count + 1))
-        fi
-    done
-    
-    echo "❌ Database initialization failed after $max_retries attempts"
-    return 1
-}
-
-# Function to initialize databases (backward compatibility)
-init_databases() {
-    echo "🗄️  Initializing databases..."
-    
-    # Wait for PostgreSQL to be ready
-    echo "⏳ Waiting for PostgreSQL to be ready..."
-    kubectl wait --for=condition=ready pod -l app=postgres -n dev --timeout=120s
-    
-    # Call the internal function
-    init_databases_internal
-}
+# Database initialization functions removed - using external PostgreSQL on WSL2
+# The external PostgreSQL server should have the following databases pre-configured:
+# - orders_db (owner: k8s_user)
+# - sales_db (owner: k8s_user)
+# Database connection: postgresql://k8s_user:k8s_password@host.docker.internal:5432/
 
 # Function to setup local hosts
 setup_hosts() {
@@ -259,6 +225,11 @@ show_access_info() {
     echo "  kubectl get pods -n dev"
     echo "  kubectl logs -f deployment/orders-service -n dev"
     echo "  kubectl logs -f deployment/sales-service -n dev"
+    echo ""
+    echo "🗄️  Database Information:"
+    echo "  External PostgreSQL on WSL2"
+    echo "  Connection: postgresql://k8s_user:k8s_password@host.docker.internal:5432/"
+    echo "  Databases: orders_db, sales_db"
     echo ""
     echo "🧹 Cleanup:"
     echo "  kind delete cluster --name=${CLUSTER_NAME}"
