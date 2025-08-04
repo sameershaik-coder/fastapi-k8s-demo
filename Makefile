@@ -1,4 +1,4 @@
-.PHONY: help kind-deploy kind-test kind-status kind-cleanup kind-cleanup-hosts kind-rebuild docker-dev logs port-forward clean-all
+.PHONY: help kind-deploy kind-test kind-status kind-cleanup kind-cleanup-hosts kind-rebuild docker-dev logs port-forward clean-all clean-db db-start db-stop db-status
 
 # Default target
 help:
@@ -22,6 +22,12 @@ help:
 	@echo "  make logs            - Show application logs (Kind)"
 	@echo "  make port-forward    - Setup port forwarding for direct access"
 	@echo "  make clean-all       - Clean both Kind and Docker Compose"
+	@echo "  make clean-db        - Reset PostgreSQL databases (⚠️  DESTRUCTIVE)"
+	@echo ""
+	@echo "🗄️  PostgreSQL Management:"
+	@echo "  make db-start        - Start PostgreSQL service"
+	@echo "  make db-stop         - Stop PostgreSQL service"
+	@echo "  make db-status       - Check PostgreSQL service status"
 	@echo ""
 
 kind-deploy:
@@ -143,8 +149,8 @@ logs:
 		echo "=== Sales Service Logs ==="; \
 		kubectl logs --tail=20 deployment/sales-service -n dev || echo "Sales service not found"; \
 		echo ""; \
-		echo "=== PostgreSQL Logs ==="; \
-		kubectl logs --tail=10 deployment/postgres -n dev || echo "PostgreSQL not found"; \
+		echo "=== External PostgreSQL Status ==="; \
+		sudo systemctl status postgresql@16-main --no-pager || echo "PostgreSQL service status unavailable"; \
 	else \
 		echo "❌ Kind cluster not found. Run 'make kind-deploy' first."; \
 	fi
@@ -169,7 +175,43 @@ clean-all:
 	@echo "🧹 Cleaning up everything..."
 	./deploy-kind.sh cleanup || true
 	docker-compose down -v 2>/dev/null || true
+	@echo ""
+	@echo "ℹ️  Note: External PostgreSQL on WSL2 is not affected by this cleanup."
+	@echo "   To reset PostgreSQL data, use 'make clean-db' if needed."
 	@echo "✅ All cleanup completed"
+
+# Clean up PostgreSQL data (optional - use with caution)
+clean-db:
+	@echo "⚠️  WARNING: This will drop and recreate the databases!"
+	@echo "This will permanently delete all data in orders_db and sales_db."
+	@read -p "Are you sure? Type 'yes' to continue: " confirm; \
+	if [ "$$confirm" = "yes" ]; then \
+		echo "🗄️  Dropping and recreating databases..."; \
+		sudo -u postgres psql -c "DROP DATABASE IF EXISTS orders_db;" || true; \
+		sudo -u postgres psql -c "DROP DATABASE IF EXISTS sales_db;" || true; \
+		sudo -u postgres psql -c "CREATE DATABASE orders_db OWNER k8s_user;"; \
+		sudo -u postgres psql -c "CREATE DATABASE sales_db OWNER k8s_user;"; \
+		sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE orders_db TO k8s_user;"; \
+		sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE sales_db TO k8s_user;"; \
+		echo "✅ Databases recreated successfully"; \
+	else \
+		echo "❌ Database cleanup cancelled"; \
+	fi
+
+# PostgreSQL service management
+db-start:
+	@echo "🚀 Starting PostgreSQL service..."
+	sudo systemctl start postgresql@16-main
+	@echo "✅ PostgreSQL started"
+
+db-stop:
+	@echo "🛑 Stopping PostgreSQL service..."
+	sudo systemctl stop postgresql@16-main
+	@echo "✅ PostgreSQL stopped"
+
+db-status:
+	@echo "📊 PostgreSQL service status:"
+	sudo systemctl status postgresql@16-main --no-pager
 
 # Quick development workflow targets
 dev: docker-dev test-local
