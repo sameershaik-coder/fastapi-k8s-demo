@@ -11,6 +11,7 @@ help:
 	@echo "  make kind-cleanup      - Remove Kind cluster, registry, and hosts"
 	@echo "  make kind-cleanup-hosts - Remove only host entries"
 	@echo "  make kind-rebuild      - Rebuild and redeploy images"
+	@echo "  make kind-debug        - Debug deployment issues"
 	@echo ""
 	@echo "🐳 Local Development:"
 	@echo "  make docker-dev      - Run with Docker Compose (local dev)"
@@ -24,6 +25,20 @@ help:
 
 kind-deploy:
 	@echo "🚀 Deploying FastAPI Microservices with Kind..."
+	@echo "🔍 Checking prerequisites..."
+	@if ! command -v kind >/dev/null 2>&1; then \
+		echo "❌ Kind is not installed. Please install Kind first."; \
+		exit 1; \
+	fi
+	@if ! command -v kubectl >/dev/null 2>&1; then \
+		echo "❌ kubectl is not installed. Please install kubectl first."; \
+		exit 1; \
+	fi
+	@if ! command -v docker >/dev/null 2>&1; then \
+		echo "❌ Docker is not installed. Please install Docker first."; \
+		exit 1; \
+	fi
+	@echo "✅ Prerequisites check passed"
 	./deploy-kind.sh deploy
 
 kind-test:
@@ -59,6 +74,35 @@ kind-rebuild:
 		echo "✅ Rebuild completed"; \
 	else \
 		echo "❌ Kind cluster not found. Run 'make kind-deploy' first."; \
+	fi
+
+# Troubleshooting target
+kind-debug:
+	@echo "🔍 Debugging Kind deployment issues..."
+	@if kind get clusters | grep -q "fastapi-microservices"; then \
+		echo "=== Cluster Status ==="; \
+		kubectl get nodes; \
+		echo ""; \
+		echo "=== Pod Status ==="; \
+		kubectl get pods -A; \
+		echo ""; \
+		echo "=== Service Status ==="; \
+		kubectl get services -n dev; \
+		echo ""; \
+		echo "=== Database Status ==="; \
+		kubectl exec -n dev deployment/postgres -- psql -U user -d postgres -c "\l" || echo "Database connection failed"; \
+		echo ""; \
+		echo "=== Recent Events ==="; \
+		kubectl get events -n dev --sort-by='.lastTimestamp' | tail -10; \
+		echo ""; \
+		echo "=== Failing Pod Logs ==="; \
+		for pod in $$(kubectl get pods -n dev --field-selector=status.phase=Failed -o name 2>/dev/null); do \
+			echo "Logs for $$pod:"; \
+			kubectl logs $$pod -n dev --tail=20; \
+			echo ""; \
+		done; \
+	else \
+		echo "❌ Kind cluster not found."; \
 	fi
 
 docker-dev:

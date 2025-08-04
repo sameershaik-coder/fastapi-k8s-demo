@@ -134,7 +134,15 @@ deploy_applications() {
     echo "Deploying PostgreSQL..."
     kubectl apply -f k8s/kind/postgres.yaml
     
-    # Deploy applications
+    # Wait for PostgreSQL to be ready and initialize databases
+    echo "⏳ Waiting for PostgreSQL to be ready..."
+    kubectl wait --for=condition=ready pod -l app=postgres -n dev --timeout=120s
+    
+    # Initialize databases immediately after PostgreSQL is ready
+    echo "🗄️  Initializing databases..."
+    init_databases_internal
+    
+    # Now deploy applications (they can connect to existing databases)
     echo "Deploying application services..."
     kubectl apply -f k8s/kind/orders-service.yaml
     kubectl apply -f k8s/kind/sales-service.yaml
@@ -154,7 +162,44 @@ deploy_applications() {
     kubectl get ingress -n dev
 }
 
-# Function to initialize databases
+# Internal function to initialize databases (called during deployment)
+init_databases_internal() {
+    local max_retries=5
+    local retry_count=0
+    
+    while [ $retry_count -lt $max_retries ]; do
+        echo "🔄 Database initialization attempt $((retry_count + 1))/$max_retries..."
+        
+        # Create orders_db
+        if kubectl exec -n dev deployment/postgres -- psql -U user -d postgres -c "CREATE DATABASE orders_db;" 2>/dev/null; then
+            echo "✅ Created orders_db"
+        else
+            echo "📝 orders_db already exists or creation failed"
+        fi
+        
+        # Create sales_db
+        if kubectl exec -n dev deployment/postgres -- psql -U user -d postgres -c "CREATE DATABASE sales_db;" 2>/dev/null; then
+            echo "✅ Created sales_db"
+        else
+            echo "📝 sales_db already exists or creation failed"
+        fi
+        
+        # Verify databases exist
+        if kubectl exec -n dev deployment/postgres -- psql -U user -d postgres -c "\l" | grep -q "orders_db\|sales_db"; then
+            echo "✅ Database initialization successful"
+            return 0
+        else
+            echo "⚠️  Database verification failed, retrying in 5 seconds..."
+            sleep 5
+            retry_count=$((retry_count + 1))
+        fi
+    done
+    
+    echo "❌ Database initialization failed after $max_retries attempts"
+    return 1
+}
+
+# Function to initialize databases (backward compatibility)
 init_databases() {
     echo "🗄️  Initializing databases..."
     
@@ -162,14 +207,8 @@ init_databases() {
     echo "⏳ Waiting for PostgreSQL to be ready..."
     kubectl wait --for=condition=ready pod -l app=postgres -n dev --timeout=120s
     
-    # Create databases
-    echo "Creating orders_db..."
-    kubectl exec -n dev deployment/postgres -- psql -U user -d postgres -c "CREATE DATABASE orders_db;" 2>/dev/null || echo "Database orders_db already exists"
-    
-    echo "Creating sales_db..."
-    kubectl exec -n dev deployment/postgres -- psql -U user -d postgres -c "CREATE DATABASE sales_db;" 2>/dev/null || echo "Database sales_db already exists"
-    
-    echo "✅ Databases initialized"
+    # Call the internal function
+    init_databases_internal
 }
 
 # Function to setup local hosts
@@ -233,7 +272,6 @@ main() {
     install_ingress
     build_and_load_images
     deploy_applications
-    init_databases
     setup_hosts
     show_access_info
 }

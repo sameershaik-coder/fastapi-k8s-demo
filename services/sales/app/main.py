@@ -53,8 +53,33 @@ class SaleResponse(BaseModel):
 # FastAPI App
 app = FastAPI(title="Sales Service", version="1.0.0")
 
-# Create tables
-Base.metadata.create_all(bind=engine)
+# Create tables with retry logic
+def create_tables_with_retry(max_retries=10, delay=5):
+    import time
+    for attempt in range(max_retries):
+        try:
+            Base.metadata.create_all(bind=engine)
+            print("✅ Database tables created successfully")
+            return
+        except Exception as e:
+            print(f"⚠️  Attempt {attempt + 1}/{max_retries} failed: {e}")
+            if attempt < max_retries - 1:
+                print(f"⏳ Retrying in {delay} seconds...")
+                time.sleep(delay)
+            else:
+                print("❌ Failed to create database tables after all retries")
+                raise
+
+# Initialize tables on startup with better error handling
+@app.on_event("startup")
+async def startup_event():
+    try:
+        create_tables_with_retry()
+        print("🚀 Sales service started successfully")
+    except Exception as e:
+        print(f"💥 Failed to start sales service: {e}")
+        # Don't exit, let Kubernetes restart the pod
+        pass
 
 # Dependency
 def get_db():
